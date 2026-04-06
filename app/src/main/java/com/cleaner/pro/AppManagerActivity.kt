@@ -17,13 +17,13 @@ import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.*
 
 class AppManagerActivity : BaseActivity() {
-
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     private val apps = mutableListOf<AppInfo>()
     private lateinit var adapter: AppListAdapter
     private lateinit var countTv: TextView
     private lateinit var selTv: TextView
+    private lateinit var filterRow: LinearLayout
     private var currentFilter = "all"
 
     override fun onCreate(s: Bundle?) {
@@ -56,7 +56,9 @@ class AppManagerActivity : BaseActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(top)
 
-        root.addView(buildFilterRow())
+        // ✅ Fix: filterRow কে variable এ রাখো যাতে rebuild করা যায়
+        filterRow = buildFilterRow()
+        root.addView(filterRow)
 
         val infoRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -100,10 +102,10 @@ class AppManagerActivity : BaseActivity() {
 
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(
-            Triple(R.drawable.ic_sleep, "IGNORE",     "#4A90E2"),
-            Triple(R.drawable.ic_sleep, "SLEEP",      "#F5A623"),
+            Triple(R.drawable.ic_sleep, "IGNORE", "#4A90E2"),
+            Triple(R.drawable.ic_sleep, "SLEEP", "#F5A623"),
             Triple(R.drawable.ic_clean, "FORCE STOP", "#F5A623"),
-            Triple(R.drawable.ic_apps,  "UNINSTALL",  "#4A90E2")
+            Triple(R.drawable.ic_apps, "UNINSTALL", "#4A90E2")
         ).forEachIndexed { i, (icon, label, col) ->
             val btn = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
@@ -127,6 +129,7 @@ class AppManagerActivity : BaseActivity() {
         loadApps()
     }
 
+    // ✅ Fix: buildFilterRow() rebuild করে এবং active state সঠিকভাবে দেখায়
     private fun buildFilterRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -134,27 +137,40 @@ class AppManagerActivity : BaseActivity() {
             setBackgroundColor(ThemeHelper.navColor(this@AppManagerActivity))
         }
         listOf(
-            "all"    to getString(R.string.all_apps),
-            "user"   to "Installed",
+            "all" to getString(R.string.all_apps),
+            "user" to "Installed",
             "system" to "System"
         ).forEach { (key, label) ->
             val active = (key == currentFilter)
             row.addView(TextView(this).apply {
                 text = label; textSize = 13f; gravity = Gravity.CENTER
                 setPadding(dp(14), dp(7), dp(14), dp(7))
-                setTextColor(if (active) Color.WHITE
-                             else ThemeHelper.textSecondary(this@AppManagerActivity))
+                setTextColor(if (active) Color.WHITE else ThemeHelper.textSecondary(this@AppManagerActivity))
                 typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 background = if (active) GradientDrawable().apply {
                     setColor(Color.parseColor("#4A90E2"))
                     cornerRadius = dp(20).toFloat()
                 } else null
                 setOnClickListener {
-                    if (currentFilter != key) { currentFilter = key; loadApps() }
+                    if (currentFilter != key) {
+                        currentFilter = key
+                        // ✅ Fix: filterRow rebuild করো tab switch করলে
+                        rebuildFilterRow()
+                        loadApps()
+                    }
                 }
             }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) })
         }
         return row
+    }
+
+    private fun rebuildFilterRow() {
+        val parent = filterRow.parent as? LinearLayout ?: return
+        val idx = (0 until parent.childCount).firstOrNull { parent.getChildAt(it) == filterRow } ?: return
+        val newRow = buildFilterRow()
+        parent.removeView(filterRow)
+        parent.addView(newRow, idx)
+        filterRow = newRow
     }
 
     private fun loadApps() {
@@ -172,7 +188,7 @@ class AppManagerActivity : BaseActivity() {
     private fun updateSelBar() {
         val sel = apps.filter { it.isSelected }
         selTv.text = if (sel.isEmpty()) ""
-            else "${sel.size} SELECTED (${sel.sumOf { it.totalSize }.toReadableSize()})"
+        else "${sel.size} SELECTED (${sel.sumOf { it.totalSize }.toReadableSize()})"
     }
 
     private fun handleAction(app: AppInfo, action: String) {
@@ -198,17 +214,52 @@ class AppManagerActivity : BaseActivity() {
             return
         }
         when (i) {
-            0 -> {
+            0 -> { // Ignore (deselect)
                 sel.forEach { it.isSelected = false }
                 adapter.notifyDataSetChanged()
                 updateSelBar()
             }
-            1, 2 -> {
+            1 -> { // Sleep
                 val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
                 sel.forEach { am.killBackgroundProcesses(it.packageName) }
-                Toast.makeText(this, "${sel.size} app killed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "${sel.size} app stopped", Toast.LENGTH_SHORT).show()
             }
-            3 -> sel.firstOrNull()?.let { handleAction(it, "uninstall") }
+            2 -> { // ✅ Fix: Force Stop — শুধু selected apps এর জন্য Accessibility ব্যবহার করো
+                val svc = AutoCleanService.instance
+                if (svc != null) {
+                    val progDialog = android.app.ProgressDialog(this).apply {
+                        setMessage("পরিষ্কার হচ্ছে... (0/${sel.size})")
+                        setCancelable(false)
+                        show()
+                    }
+                    AutoCleanService.onProgress = { _, done, total ->
+                        runOnUiThread {
+                            progDialog.setMessage("পরিষ্কার হচ্ছে... ($done/$total)")
+                        }
+                    }
+                    AutoCleanService.onDone = {
+                        runOnUiThread {
+                            progDialog.dismiss()
+                            Toast.makeText(this, "${sel.size} app cache cleared", Toast.LENGTH_SHORT).show()
+                            loadApps()
+                        }
+                    }
+                    // ✅ Fix: শুধু selected apps এর package list দাও
+                    AutoCleanService.startClear(sel.map { it.packageName }, false)
+                } else {
+                    // Accessibility নেই — fallback: kill processes
+                    val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                    sel.forEach { am.killBackgroundProcesses(it.packageName) }
+                    Toast.makeText(
+                        this,
+                        "Accessibility enable করলে Cache clear হবে। এখন শুধু Force Stop করা হলো।",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            3 -> { // Uninstall (first selected)
+                sel.firstOrNull()?.let { handleAction(it, "uninstall") }
+            }
         }
     }
 }
@@ -219,8 +270,7 @@ class AppListAdapter(
     private val onChange: () -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
-    private fun dp(v: Int) =
-        (v * android.content.res.Resources.getSystem().displayMetrics.density + 0.5f).toInt()
+    private fun dp(v: Int) = (v * android.content.res.Resources.getSystem().displayMetrics.density + 0.5f).toInt()
 
     override fun getItemCount() = apps.size
 
@@ -239,26 +289,35 @@ class AppListAdapter(
         val row = holder.itemView as LinearLayout
         row.removeAllViews()
 
-        row.setBackgroundColor(
-            if (app.isSelected) Color.parseColor("#15223A") else Color.TRANSPARENT
-        )
+        // ✅ Fix: পুরো row কালো না করে শুধু subtle highlight দাও
+        row.background = if (app.isSelected) GradientDrawable().apply {
+            setColor(Color.parseColor("#1A3060"))  // সূক্ষ্ম নীলাভ highlight
+            cornerRadius = dp(8).toFloat()
+        } else null
 
-        row.addView(CheckBox(ctx).apply {
+        // Checkbox — ✅ শুধু টিক মার্ক, পুরো row dark না
+        val cb = CheckBox(ctx).apply {
             isChecked = app.isSelected
+            buttonTintList = ColorStateList.valueOf(Color.parseColor("#4A90E2"))
             setOnCheckedChangeListener { _, c ->
                 app.isSelected = c
-                row.setBackgroundColor(
-                    if (c) Color.parseColor("#15223A") else Color.TRANSPARENT
-                )
+                // ✅ Fix: শুধু এই row এর background পরিবর্তন করো
+                row.background = if (c) GradientDrawable().apply {
+                    setColor(Color.parseColor("#1A3060"))
+                    cornerRadius = dp(8).toFloat()
+                } else null
                 onChange()
             }
-        }, LinearLayout.LayoutParams(dp(32), dp(32)).apply { rightMargin = dp(4) })
+        }
+        row.addView(cb, LinearLayout.LayoutParams(dp(32), dp(32)).apply { rightMargin = dp(4) })
 
+        // App icon
         row.addView(ImageView(ctx).apply {
             app.icon?.let { setImageDrawable(it) }
             scaleType = ImageView.ScaleType.FIT_CENTER
         }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { rightMargin = dp(12) })
 
+        // App info
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(ctx).apply {
             text = app.name; textSize = 14f
@@ -272,7 +331,7 @@ class AppListAdapter(
         } else ""
         col.addView(TextView(ctx).apply {
             text = if (days.isNotEmpty()) "${app.totalSize.toReadableSize()} · $days"
-                   else app.totalSize.toReadableSize()
+            else app.totalSize.toReadableSize()
             textSize = 12f
             setTextColor(ThemeHelper.textSecondary(ctx))
         })
