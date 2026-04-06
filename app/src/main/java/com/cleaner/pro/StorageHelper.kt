@@ -17,20 +17,21 @@ object StorageHelper {
 
     fun getStorageInfo(ctx: Context): StorageInfo {
         return try {
-            val path = try {
-                Environment.getExternalStorageDirectory()
-            } catch (_: Exception) {
-                Environment.getDataDirectory()
-            }
+            // ✅ Fix: freeBlocksLong ব্যবহার করো (Files app এর মতো)
+            val path = Environment.getExternalStorageDirectory()
             val stat = StatFs(path.absolutePath)
-            val total = stat.blockSizeLong * stat.blockCountLong
-            val free  = stat.blockSizeLong * stat.availableBlocksLong
+            val blockSize = stat.blockSizeLong
+            val total = blockSize * stat.blockCountLong
+            // ✅ freeBlocksLong = total free (root reserved সহ) → Files app এর মতো
+            val free = blockSize * stat.freeBlocksLong
+
             StorageInfo(total, total - free, free, estimateCleanable(ctx))
         } catch (e: Exception) {
             try {
                 val stat = StatFs(Environment.getDataDirectory().absolutePath)
-                val total = stat.blockSizeLong * stat.blockCountLong
-                val free  = stat.blockSizeLong * stat.availableBlocksLong
+                val blockSize = stat.blockSizeLong
+                val total = blockSize * stat.blockCountLong
+                val free = blockSize * stat.freeBlocksLong
                 StorageInfo(total, total - free, free, 0L)
             } catch (_: Exception) {
                 StorageInfo(0, 0, 0, 0)
@@ -57,8 +58,8 @@ object StorageHelper {
 
     fun getInstalledApps(ctx: Context, filter: String = "all"): List<AppInfo> {
         val result = mutableListOf<AppInfo>()
-        val pm  = ctx.packageManager
-        val sm  = ctx.getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
+        val pm = ctx.packageManager
+        val sm = ctx.getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
         val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
         val usageMap = try {
@@ -71,7 +72,7 @@ object StorageHelper {
 
         pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach { app ->
             val isSys = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            if (filter == "user"   && isSys)  return@forEach
+            if (filter == "user" && isSys) return@forEach
             if (filter == "system" && !isSys) return@forEach
             try {
                 val stats = sm.queryStatsForPackage(
@@ -80,17 +81,18 @@ object StorageHelper {
                     android.os.Process.myUserHandle()
                 )
                 result.add(AppInfo(
-                    name        = pm.getApplicationLabel(app).toString(),
+                    name = pm.getApplicationLabel(app).toString(),
                     packageName = app.packageName,
-                    icon        = try { pm.getApplicationIcon(app.packageName) } catch (_: Exception) { null },
-                    cacheSize   = stats.cacheBytes,
-                    dataSize    = stats.dataBytes,
-                    totalSize   = stats.appBytes + stats.dataBytes + stats.cacheBytes,
-                    lastUsed    = usageMap[app.packageName] ?: 0L,
+                    icon = try { pm.getApplicationIcon(app.packageName) } catch (_: Exception) { null },
+                    cacheSize = stats.cacheBytes,
+                    dataSize = stats.dataBytes,
+                    totalSize = stats.appBytes + stats.dataBytes + stats.cacheBytes,
+                    lastUsed = usageMap[app.packageName] ?: 0L,
                     isSystemApp = isSys
                 ))
             } catch (_: Exception) {}
         }
+
         return result.sortedWith(
             compareByDescending<AppInfo> { it.lastUsed }.thenByDescending { it.totalSize }
         )
@@ -101,8 +103,9 @@ object StorageHelper {
         val pm = ctx.packageManager
         val sm = ctx.getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
 
-        val cacheList  = mutableListOf<CleanItem>()
+        val cacheList = mutableListOf<CleanItem>()
         var cacheTotal = 0L
+
         pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach { app ->
             try {
                 val stats = sm.queryStatsForPackage(
@@ -122,6 +125,7 @@ object StorageHelper {
                 }
             } catch (_: Exception) {}
         }
+
         if (cacheList.isNotEmpty())
             categories.add(CleanCategory(
                 "hidden_cache", "", cacheTotal,
@@ -132,12 +136,10 @@ object StorageHelper {
         try { findEmptyFolders(Environment.getExternalStorageDirectory(), emptyList) } catch (_: Exception) {}
         if (emptyList.isNotEmpty())
             categories.add(CleanCategory(
-                "empty_folders", "",
-                emptyList.sumOf { it.size },
-                emptyList.toMutableList()
+                "empty_folders", "", emptyList.sumOf { it.size }, emptyList.toMutableList()
             ))
 
-        val apkList  = mutableListOf<CleanItem>()
+        val apkList = mutableListOf<CleanItem>()
         var apkTotal = 0L
         try {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -160,7 +162,8 @@ object StorageHelper {
                 if (f.isDirectory) {
                     if (f.listFiles()?.isEmpty() == true)
                         result.add(CleanItem("empty_folders", f.name, f.absolutePath, null, 4096L))
-                    else findEmptyFolders(f, result, depth + 1)
+                    else
+                        findEmptyFolders(f, result, depth + 1)
                 }
             }
         } catch (_: Exception) {}
@@ -169,8 +172,8 @@ object StorageHelper {
     fun queryMedia(ctx: Context, type: Int): List<MediaItem> {
         val result = mutableListOf<MediaItem>()
         val uri = when (type) {
-            0    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            1    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            0 -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            1 -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         }
         val cols = arrayOf(
@@ -184,12 +187,12 @@ object StorageHelper {
                 uri, cols, null, null,
                 "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
             )?.use { c ->
-                val idIdx   = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val idIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
                 val mimeIdx = c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
                 while (c.moveToNext()) {
-                    val id      = c.getLong(idIdx)
+                    val id = c.getLong(idIdx)
                     val itemUri = ContentUris.withAppendedId(uri, id)
                     result.add(MediaItem(
                         id, itemUri,
@@ -209,14 +212,12 @@ object StorageHelper {
             try {
                 ctx.contentResolver.query(
                     uri, arrayOf(MediaStore.MediaColumns.SIZE), null, null, null
-                )?.use {
-                    while (it.moveToNext()) { count++; size += it.getLong(0) }
-                }
+                )?.use { while (it.moveToNext()) { count++; size += it.getLong(0) } }
             } catch (_: Exception) {}
             return count to size
         }
-        val (pc, ps)  = q(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-        val (vc, vs)  = q(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        val (pc, ps) = q(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        val (vc, vs) = q(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
         val (ac, as2) = q(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
         return MediaInfo(pc, vc, ac, ps, vs, as2)
     }
