@@ -12,11 +12,9 @@ import android.widget.*
 import androidx.drawerlayout.widget.DrawerLayout
 
 class MainActivity : BaseActivity() {
-
     lateinit var drawer: DrawerLayout
     private lateinit var container: FrameLayout
     private var currentTab = 0
-
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     override fun onCreate(s: Bundle?) {
@@ -35,7 +33,6 @@ class MainActivity : BaseActivity() {
                 DrawerLayout.LayoutParams.MATCH_PARENT
             ).apply { gravity = Gravity.START }
         )
-
         setContentView(drawer)
         showTab(0)
     }
@@ -60,10 +57,10 @@ class MainActivity : BaseActivity() {
         }
         data class Tab(val icon: Int, val label: String)
         val tabs = listOf(
-            Tab(R.drawable.ic_home,     getString(R.string.nav_home)),
-            Tab(R.drawable.ic_clean,    getString(R.string.nav_clean)),
-            Tab(R.drawable.ic_apps,     getString(R.string.nav_apps)),
-            Tab(R.drawable.ic_media,    getString(R.string.nav_media)),
+            Tab(R.drawable.ic_home, getString(R.string.nav_home)),
+            Tab(R.drawable.ic_clean, getString(R.string.nav_clean)),
+            Tab(R.drawable.ic_apps, getString(R.string.nav_apps)),
+            Tab(R.drawable.ic_media, getString(R.string.nav_media)),
             Tab(R.drawable.ic_settings, getString(R.string.nav_settings))
         )
         tabs.forEachIndexed { i, tab ->
@@ -81,10 +78,8 @@ class MainActivity : BaseActivity() {
             }
             col.addView(img, LinearLayout.LayoutParams(dp(22), dp(22)))
             col.addView(TextView(this).apply {
-                text = tab.label
-                textSize = 9f
-                setTextColor(tint)
-                gravity = Gravity.CENTER
+                text = tab.label; textSize = 9f
+                setTextColor(tint); gravity = Gravity.CENTER
                 setPadding(0, dp(2), 0, 0)
                 if (active) typeface = Typeface.DEFAULT_BOLD
             })
@@ -94,17 +89,28 @@ class MainActivity : BaseActivity() {
     }
 
     private fun buildDrawer(): ScrollView {
-        val bg = if (ThemeHelper.isDark(this)) Color.parseColor("#0A1628")
-                 else Color.parseColor("#1A2A44")
-        val scroll = ScrollView(this).apply { setBackgroundColor(bg) }
+        // ✅ Fix: Theme অনুযায়ী drawer color পরিবর্তন হবে
+        val isDark = ThemeHelper.isDark(this)
+        val drawerBg = if (isDark) Color.parseColor("#080F1E") else Color.parseColor("#FFFFFF")
+        val textColor = if (isDark) Color.WHITE else Color.parseColor("#0A1628")
+        val subtextColor = if (isDark) Color.parseColor("#8A9BBE") else Color.parseColor("#5A6B8A")
+        val divColor = if (isDark) Color.parseColor("#1E2E4A") else Color.parseColor("#DDE3EE")
+        val iconTint = if (isDark) Color.parseColor("#8A9BBE") else Color.parseColor("#4A90E2")
+        val rowHover = if (isDark) Color.parseColor("#111E33") else Color.parseColor("#F0F4FF")
+
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(drawerBg)
+        }
         val ll = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(52), 0, dp(24))
         }
 
+        // Header
         val hdr = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(20))
+            setBackgroundColor(if (isDark) Color.parseColor("#0D1B33") else Color.parseColor("#EEF3FF"))
         }
         try {
             hdr.addView(ImageView(this).apply {
@@ -113,37 +119,50 @@ class MainActivity : BaseActivity() {
             }, LinearLayout.LayoutParams(dp(60), dp(60)).apply { bottomMargin = dp(10) })
         } catch (_: Exception) {}
         hdr.addView(TextView(this).apply {
-            text = getString(R.string.app_name)
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            text = getString(R.string.app_name); textSize = 20f
+            setTextColor(textColor); typeface = Typeface.DEFAULT_BOLD
         })
         hdr.addView(TextView(this).apply {
-            text = "v1.0 · Smart Cleaner"
-            textSize = 12f
-            setTextColor(Color.parseColor("#8A9BBE"))
+            text = "v1.0 · Smart Cleaner"; textSize = 12f
+            setTextColor(subtextColor)
         })
         ll.addView(hdr)
-        ll.addView(divider())
+        ll.addView(divider(divColor))
 
-        ll.addView(sectionLabel("STORAGE"))
-        ll.addView(drawerRow(R.drawable.ic_apps,  getString(R.string.apps))   { nav(AppManagerActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.photos)) { nav(MediaActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.videos)) { nav(MediaActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.audio))  { nav(MediaActivity::class.java) })
-        ll.addView(divider())
+        ll.addView(sectionLabel("STORAGE", Color.parseColor("#4A90E2")))
+        ll.addView(drawerRow(R.drawable.ic_apps, getString(R.string.apps), textColor, iconTint, rowHover) {
+            nav(AppManagerActivity::class.java)
+        })
+        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.photos), textColor, iconTint, rowHover) {
+            nav(MediaActivity::class.java)
+        })
+        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.videos), textColor, iconTint, rowHover) {
+            nav(MediaActivity::class.java)
+        })
+        ll.addView(drawerRow(R.drawable.ic_media, getString(R.string.audio), textColor, iconTint, rowHover) {
+            nav(MediaActivity::class.java)
+        })
+        ll.addView(divider(divColor))
 
-        ll.addView(sectionLabel("FEATURES"))
-        ll.addView(drawerRow(R.drawable.ic_clean,    getString(R.string.quick_clean)) { nav(QuickCleanActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_sleep,    getString(R.string.sleep_mode))  { nav(AppManagerActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_settings, getString(R.string.settings))    { nav(SettingsActivity::class.java) })
-        ll.addView(divider())
+        ll.addView(sectionLabel("FEATURES", Color.parseColor("#4A90E2")))
+        ll.addView(drawerRow(R.drawable.ic_clean, getString(R.string.quick_clean), textColor, iconTint, rowHover) {
+            nav(QuickCleanActivity::class.java)
+        })
+        ll.addView(drawerRow(R.drawable.ic_sleep, getString(R.string.sleep_mode), textColor, iconTint, rowHover) {
+            nav(AppManagerActivity::class.java)
+        })
+        ll.addView(drawerRow(R.drawable.ic_settings, getString(R.string.settings), textColor, iconTint, rowHover) {
+            nav(SettingsActivity::class.java)
+        })
+        ll.addView(divider(divColor))
 
-        ll.addView(sectionLabel("OTHER"))
-        ll.addView(drawerRow(R.drawable.ic_tips,     getString(R.string.permissions)) { nav(PermissionsActivity::class.java) })
-        ll.addView(drawerRow(R.drawable.ic_settings, getString(R.string.about)) {
-            drawer.closeDrawers()
-            Toast.makeText(this, "${getString(R.string.app_name)} v1.0", Toast.LENGTH_SHORT).show()
+        ll.addView(sectionLabel("OTHER", Color.parseColor("#4A90E2")))
+        ll.addView(drawerRow(R.drawable.ic_tips, getString(R.string.permissions), textColor, iconTint, rowHover) {
+            nav(PermissionsActivity::class.java)
+        })
+        // ✅ Fix: About এখন AboutActivity তে যাবে
+        ll.addView(drawerRow(R.drawable.ic_settings, getString(R.string.about), textColor, iconTint, rowHover) {
+            nav(AboutActivity::class.java)
         })
 
         scroll.addView(ll)
@@ -155,36 +174,40 @@ class MainActivity : BaseActivity() {
         startActivity(Intent(this, cls))
     }
 
-    private fun sectionLabel(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 11f
-        setTextColor(Color.parseColor("#4A90E2"))
-        typeface = Typeface.DEFAULT_BOLD
+    private fun sectionLabel(text: String, color: Int) = TextView(this).apply {
+        this.text = text; textSize = 11f
+        setTextColor(color); typeface = Typeface.DEFAULT_BOLD
         setPadding(dp(20), dp(10), dp(20), dp(4))
     }
 
-    private fun divider() = View(this).apply {
-        setBackgroundColor(Color.parseColor("#1E2E4A"))
+    private fun divider(color: Int) = View(this).apply {
+        setBackgroundColor(color)
         layoutParams = LinearLayout.LayoutParams(-1, 1).apply {
             setMargins(dp(20), dp(4), dp(20), dp(4))
         }
     }
 
-    private fun drawerRow(icon: Int, label: String, onClick: () -> Unit): LinearLayout {
+    private fun drawerRow(
+        icon: Int, label: String,
+        textColor: Int, iconTint: Int, hoverColor: Int,
+        onClick: () -> Unit
+    ): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), dp(14), dp(20), dp(14))
             setOnClickListener { onClick() }
+            // ✅ Fix: Ripple effect
+            isClickable = true
+            isFocusable = true
         }
         row.addView(ImageView(this).apply {
             setImageResource(icon)
-            imageTintList = ColorStateList.valueOf(Color.parseColor("#8A9BBE"))
+            imageTintList = ColorStateList.valueOf(iconTint)
         }, LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(16) })
         row.addView(TextView(this).apply {
-            text = label
-            textSize = 14f
-            setTextColor(Color.WHITE)
+            text = label; textSize = 14f
+            setTextColor(textColor)
         })
         return row
     }
