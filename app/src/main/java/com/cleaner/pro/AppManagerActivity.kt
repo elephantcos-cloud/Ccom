@@ -1,0 +1,308 @@
+package com.cleaner.pro
+
+import android.app.ActivityManager
+import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Bundle
+import android.provider.Settings
+import android.text.TextUtils
+import android.view.*
+import android.widget.*
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.*
+
+class AppManagerActivity : BaseActivity() {
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
+
+    private val apps = mutableListOf<AppInfo>()
+    private lateinit var adapter: AppListAdapter
+    private lateinit var countTv: TextView
+    private lateinit var selTv: TextView
+    private var currentFilter = "all"
+
+    override fun onCreate(s: Bundle?) {
+        super.onCreate(s)
+        ThemeHelper.applyTheme(this)
+        window.statusBarColor = ThemeHelper.bgColor(this)
+        supportActionBar?.hide()
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(ThemeHelper.bgColor(this@AppManagerActivity))
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(44), dp(16), dp(12))
+            setBackgroundColor(ThemeHelper.navColor(this@AppManagerActivity))
+        }
+        top.addView(TextView(this).apply {
+            text = "←"; textSize = 22f
+            setTextColor(ThemeHelper.textPrimary(this@AppManagerActivity))
+            setPadding(0, 0, dp(16), 0)
+            setOnClickListener { finish() }
+        })
+        top.addView(TextView(this).apply {
+            text = getString(R.string.all_apps); textSize = 18f
+            setTextColor(ThemeHelper.textPrimary(this@AppManagerActivity))
+            typeface = Typeface.DEFAULT_BOLD
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(top)
+
+        root.addView(buildFilterRow())
+
+        val infoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(4))
+        }
+        countTv = TextView(this).apply {
+            textSize = 12f
+            setTextColor(ThemeHelper.textSecondary(this@AppManagerActivity))
+        }
+        infoRow.addView(countTv, LinearLayout.LayoutParams(0, -2, 1f))
+        infoRow.addView(TextView(this).apply {
+            text = "SELECT ALL"; textSize = 12f
+            setTextColor(Color.parseColor("#4A90E2"))
+            typeface = Typeface.DEFAULT_BOLD
+            setOnClickListener {
+                apps.forEach { it.isSelected = true }
+                adapter.notifyDataSetChanged()
+                updateSelBar()
+            }
+        })
+        root.addView(infoRow)
+
+        val rv = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(context)
+        }
+        adapter = AppListAdapter(apps, { app, action -> handleAction(app, action) }) { updateSelBar() }
+        rv.adapter = adapter
+        root.addView(rv, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(20))
+            setBackgroundColor(ThemeHelper.navColor(this@AppManagerActivity))
+        }
+        selTv = TextView(this).apply {
+            textSize = 12f; setTextColor(Color.parseColor("#4A90E2"))
+            gravity = Gravity.CENTER; setPadding(0, 0, 0, dp(8))
+        }
+        bottom.addView(selTv)
+
+        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(
+            Triple(R.drawable.ic_sleep, "IGNORE",     "#4A90E2"),
+            Triple(R.drawable.ic_sleep, "SLEEP",      "#F5A623"),
+            Triple(R.drawable.ic_clean, "FORCE STOP", "#F5A623"),
+            Triple(R.drawable.ic_apps,  "UNINSTALL",  "#4A90E2")
+        ).forEachIndexed { i, (icon, label, col) ->
+            val btn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, dp(6))
+                setOnClickListener { onBottomAction(i) }
+            }
+            btn.addView(ImageView(this).apply {
+                setImageResource(icon)
+                imageTintList = ColorStateList.valueOf(Color.parseColor(col))
+            }, LinearLayout.LayoutParams(dp(22), dp(22)))
+            btn.addView(TextView(this).apply {
+                text = label; textSize = 9f
+                setTextColor(Color.parseColor(col))
+                gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
+            })
+            btnRow.addView(btn, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        bottom.addView(btnRow)
+        root.addView(bottom)
+        setContentView(root)
+        loadApps()
+    }
+
+    private fun buildFilterRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(16), dp(6), dp(16), dp(6))
+            setBackgroundColor(ThemeHelper.navColor(this@AppManagerActivity))
+        }
+        listOf(
+            "all"    to getString(R.string.all_apps),
+            "user"   to "Installed",
+            "system" to "System"
+        ).forEach { (key, label) ->
+            val active = (key == currentFilter)
+            row.addView(TextView(this).apply {
+                text = label; textSize = 13f; gravity = Gravity.CENTER
+                setPadding(dp(14), dp(7), dp(14), dp(7))
+                setTextColor(if (active) Color.WHITE
+                             else ThemeHelper.textSecondary(this@AppManagerActivity))
+                typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                background = if (active) GradientDrawable().apply {
+                    setColor(Color.parseColor("#4A90E2"))
+                    cornerRadius = dp(20).toFloat()
+                } else null
+                setOnClickListener {
+                    if (currentFilter != key) { currentFilter = key; loadApps() }
+                }
+            }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) })
+        }
+        return row
+    }
+
+    private fun loadApps() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val list = StorageHelper.getInstalledApps(this@AppManagerActivity, currentFilter)
+            withContext(Dispatchers.Main) {
+                apps.clear(); apps.addAll(list)
+                adapter.notifyDataSetChanged()
+                countTv.text = "${list.size} TOTAL (${list.sumOf { it.totalSize }.toReadableSize()})"
+                updateSelBar()
+            }
+        }
+    }
+
+    private fun updateSelBar() {
+        val sel = apps.filter { it.isSelected }
+        selTv.text = if (sel.isEmpty()) ""
+            else "${sel.size} SELECTED (${sel.sumOf { it.totalSize }.toReadableSize()})"
+    }
+
+    private fun handleAction(app: AppInfo, action: String) {
+        when (action) {
+            "details" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${app.packageName}")
+            })
+            "uninstall" -> startActivity(Intent(Intent.ACTION_DELETE).apply {
+                data = Uri.parse("package:${app.packageName}")
+            })
+            "sleep" -> {
+                (getSystemService(ACTIVITY_SERVICE) as ActivityManager)
+                    .killBackgroundProcesses(app.packageName)
+                Toast.makeText(this, "${app.name} stopped", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun onBottomAction(i: Int) {
+        val sel = apps.filter { it.isSelected }
+        if (sel.isEmpty()) {
+            Toast.makeText(this, "কোনো app সিলেক্ট করা হয়নি", Toast.LENGTH_SHORT).show()
+            return
+        }
+        when (i) {
+            0 -> {
+                sel.forEach { it.isSelected = false }
+                adapter.notifyDataSetChanged()
+                updateSelBar()
+            }
+            1, 2 -> {
+                val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                sel.forEach { am.killBackgroundProcesses(it.packageName) }
+                Toast.makeText(this, "${sel.size} app killed", Toast.LENGTH_SHORT).show()
+            }
+            3 -> sel.firstOrNull()?.let { handleAction(it, "uninstall") }
+        }
+    }
+}
+
+class AppListAdapter(
+    private val apps: List<AppInfo>,
+    private val onAction: (AppInfo, String) -> Unit,
+    private val onChange: () -> Unit
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    private fun dp(v: Int) =
+        (v * android.content.res.Resources.getSystem().displayMetrics.density + 0.5f).toInt()
+
+    override fun getItemCount() = apps.size
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val v = LinearLayout(parent.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        return object : RecyclerView.ViewHolder(v) {}
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, pos: Int) {
+        val app = apps[pos]
+        val ctx = holder.itemView.context
+        val row = holder.itemView as LinearLayout
+        row.removeAllViews()
+
+        row.setBackgroundColor(
+            if (app.isSelected) Color.parseColor("#15223A") else Color.TRANSPARENT
+        )
+
+        row.addView(CheckBox(ctx).apply {
+            isChecked = app.isSelected
+            setOnCheckedChangeListener { _, c ->
+                app.isSelected = c
+                row.setBackgroundColor(
+                    if (c) Color.parseColor("#15223A") else Color.TRANSPARENT
+                )
+                onChange()
+            }
+        }, LinearLayout.LayoutParams(dp(32), dp(32)).apply { rightMargin = dp(4) })
+
+        row.addView(ImageView(ctx).apply {
+            app.icon?.let { setImageDrawable(it) }
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { rightMargin = dp(12) })
+
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(TextView(ctx).apply {
+            text = app.name; textSize = 14f
+            setTextColor(ThemeHelper.textPrimary(ctx))
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+        })
+        val days = if (app.lastUsed > 0) {
+            val d = ((System.currentTimeMillis() - app.lastUsed) / (1000L * 60 * 60 * 24)).toInt()
+            when { d == 0 -> "আজ"; d == 1 -> "গতকাল"; else -> "$d দিন আগে" }
+        } else ""
+        col.addView(TextView(ctx).apply {
+            text = if (days.isNotEmpty()) "${app.totalSize.toReadableSize()} · $days"
+                   else app.totalSize.toReadableSize()
+            textSize = 12f
+            setTextColor(ThemeHelper.textSecondary(ctx))
+        })
+        row.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
+
+        if (app.isSystemApp) {
+            row.addView(TextView(ctx).apply {
+                text = "SYS"; textSize = 9f
+                setTextColor(ThemeHelper.textSecondary(ctx))
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#1E2E4A"))
+                    cornerRadius = dp(4).toFloat()
+                }
+                setPadding(dp(4), dp(2), dp(4), dp(2))
+            })
+        }
+
+        row.setOnClickListener { onAction(app, "details") }
+        row.setOnLongClickListener {
+            val m = PopupMenu(ctx, row)
+            m.menu.add(ctx.getString(R.string.clear_cache))
+            m.menu.add("Force Stop")
+            m.menu.add(ctx.getString(R.string.uninstall))
+            m.setOnMenuItemClickListener { item ->
+                when (item.title.toString()) {
+                    ctx.getString(R.string.clear_cache), "Force Stop" -> onAction(app, "sleep")
+                    else -> onAction(app, "uninstall")
+                }; true
+            }
+            m.show(); true
+        }
+    }
+}
