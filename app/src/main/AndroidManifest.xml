@@ -13,10 +13,18 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="content"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND"/>
         </intent>
     </queries>
 
@@ -29,8 +37,18 @@
         android:theme="@style/Theme.CleanerPro"
         android:largeHeap="true">
 
-        <activity
-            android:name=".SplashActivity"
+        <!-- FileProvider for sharing files -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+
+        <activity android:name=".SplashActivity"
             android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.CleanerPro.Splash">
@@ -43,19 +61,29 @@
         <activity android:name=".MainActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
+
         <activity android:name=".QuickCleanActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
+
         <activity android:name=".AppManagerActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
+
         <activity android:name=".MediaActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
+
         <activity android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
+
         <activity android:name=".PermissionsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"/>
+
+        <!-- ✅ নতুন AboutActivity -->
+        <activity android:name=".AboutActivity"
             android:exported="false"
             android:screenOrientation="portrait"/>
 
