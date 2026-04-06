@@ -34,12 +34,14 @@ data class CleanCategory(
     var isSelected: Boolean = true
 )
 
+// ✅ Fix: isSelected field যোগ করা হয়েছে
 data class MediaItem(
     val id: Long,
     val uri: android.net.Uri,
     val name: String,
     val size: Long,
-    val mimeType: String
+    val mimeType: String,
+    var isSelected: Boolean = false   // ← এটা আগে ছিল না
 )
 
 data class MediaInfo(
